@@ -1175,6 +1175,10 @@ func init() {
 	groupDescAllowLive := groupFields[48].Descriptor()
 	// group.DefaultAllowLive holds the default value on creation for the allow_live field.
 	group.DefaultAllowLive = groupDescAllowLive.Default.(bool)
+	// groupDescAllowAudioTranscription is the schema descriptor for allow_audio_transcription field.
+	groupDescAllowAudioTranscription := groupFields[48].Descriptor()
+	// group.DefaultAllowAudioTranscription holds the default value on creation for the allow_audio_transcription field.
+	group.DefaultAllowAudioTranscription = groupDescAllowAudioTranscription.Default.(bool)
 	// groupDescForceOpenaiFast is the schema descriptor for force_openai_fast field.
 	groupDescForceOpenaiFast := groupFields[49].Descriptor()
 	// group.DefaultForceOpenaiFast holds the default value on creation for the force_openai_fast field.
