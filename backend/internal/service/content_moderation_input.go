@@ -50,6 +50,8 @@ func extractContentModerationInput(protocol string, body []byte, filterReminders
 		// System One carries no client-harness reminder blocks, so a literal
 		// <system-reminder> is ordinary user text and must never be skipped.
 		moderationTextCollector{}.collectSystemOneInput(body, &parts)
+	case ContentModerationProtocolOpenAIAudioTranscription:
+		collector.addModerationText(&parts, gjson.GetBytes(body, "prompt").String())
 	default:
 		collector.collectLastResponsesInput(gjson.GetBytes(body, "input"), &parts, &images)
 		collector.collectLastRoleMessage(gjson.GetBytes(body, "messages"), "user", &parts, &images)
