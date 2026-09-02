@@ -85,7 +85,7 @@ func TestGetSharedReqClient_ImpersonateAndProxy(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, client)
-	require.Equal(t, "http://proxy.local:8080|4s|true|false", buildReqClientKey(opts))
+	require.Equal(t, "http://proxy.local:8080|4s|true|false|false", buildReqClientKey(opts))
 }
 
 func TestGetSharedReqClient_InvalidProxyURL(t *testing.T) {
@@ -148,4 +148,17 @@ func TestGetSharedReqClient_ImpersonateUsesFirefoxFingerprint(t *testing.T) {
 	// chatgpt.com 的 Cloudflare 会质询 req 内置的 Chrome/120 伪装，必须保持 Firefox 指纹。
 	require.Contains(t, client.Headers.Get("User-Agent"), "Firefox/")
 	require.NotContains(t, client.Headers.Get("User-Agent"), "Chrome/")
+}
+
+func TestGetSharedReqClient_LatestChromeSeparatesCacheAndUpgradesClientHints(t *testing.T) {
+	sharedReqClients = sync.Map{}
+	base := reqClientOptions{Timeout: 5 * time.Second, Impersonate: true}
+	latest := base
+	latest.LatestChrome = true
+	require.NotEqual(t, buildReqClientKey(base), buildReqClientKey(latest))
+
+	client, err := getSharedReqClient(latest)
+	require.NoError(t, err)
+	require.Contains(t, client.Headers.Get("user-agent"), "Chrome/133")
+	require.Contains(t, client.Headers.Get("sec-ch-ua"), `"Chromium";v="133"`)
 }
