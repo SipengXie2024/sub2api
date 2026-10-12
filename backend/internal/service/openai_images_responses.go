@@ -1940,7 +1940,9 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	// keepalive 心跳字节，避免 failover 第 2 轮起把上一轮心跳残留误判为已写响应。
 	writerSizeBeforeResponse := OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
 	if parsed.Stream {
-		if direct {
+		if direct && isCodexDirectImagesJSONResponse(resp) {
+			usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleCodexDirectImagesJSONAsStream(resp, c, startTime, parsed)
+		} else if direct {
 			usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesStreamingResponse(resp, c, startTime, parsed)
 		} else {
 			usage, imageCount, imageOutputSizes, firstTokenMs, err = s.handleOpenAIImagesOAuthStreamingResponse(resp, c, startTime, parsed.ResponseFormat, openAIImagesStreamPrefix(parsed), upstreamModel)
