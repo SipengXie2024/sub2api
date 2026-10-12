@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -163,16 +164,80 @@ func TestCodexDirectImagesStreamConvertsPlainJSON(t *testing.T) {
 // A JSON error body must stay retryable: nothing may reach the client before
 // the failover decision is made.
 func TestCodexDirectImagesStreamPlainJSONErrorWritesNothing(t *testing.T) {
-	body := []byte(`{"model":"gpt-image-2","prompt":"draw","stream":true}`)
+	for _, test := range []struct {
+		name, response string
+		limit          int64
+		wantFailover   bool
+	}{
+		{"empty data", `{"data":[]}`, 0, true},
+		{"upstream error with image", `{"error":{"type":"server_error","message":"temporary failure"},"data":[{"b64_json":"aGVsbG8="}]}`, 0, true},
+		{"malformed after image", `{"data":[{"b64_json":"aGVsbG8="}],`, 0, false},
+		{"read error after image", `{"data":[{"b64_json":"aGVsbG8="}]}`, 0, true},
+		{"oversized", `{"data":[{"b64_json":"aGVsbG8="}]}`, 8, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			body := []byte(`{"model":"gpt-image-2","prompt":"draw","stream":true}`)
+			c, rec := newOpenAIImagesTestContext(t, body)
+			resp := openAIImagesJSONResponse()
+			resp.Body = io.NopCloser(strings.NewReader(test.response))
+			if test.name == "read error after image" {
+				resp.Body = io.NopCloser(io.MultiReader(strings.NewReader(test.response), &openAIImagesReadErrorBody{err: io.ErrUnexpectedEOF}))
+			}
+			upstream := &httpUpstreamRecorder{resp: resp}
+			svc := newOpenAIImagesTestService(upstream)
+			svc.cfg.Gateway.UpstreamResponseReadMaxBytes = test.limit
+			parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+			require.NoError(t, err)
+			result, err := svc.ForwardImages(context.Background(), c, directImagesTestAccount(), body, parsed, "")
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.Empty(t, rec.Body.String())
+			require.False(t, c.Writer.Written(), "even headers must remain uncommitted")
+			require.Equal(t, -1, c.Writer.Size())
+			require.False(t, rec.Flushed)
+			var failover *UpstreamFailoverError
+			if test.wantFailover {
+				require.ErrorAs(t, err, &failover)
+				require.Equal(t, http.StatusBadGateway, failover.StatusCode)
+				// Reuse the same client writer, as the handler does on failover.
+				upstream.resp = openAIImagesJSONResponse()
+				result, err = svc.ForwardImages(context.Background(), c, directImagesTestAccount(), body, parsed, "")
+				require.NoError(t, err)
+				require.Equal(t, 1, result.ImageCount)
+				require.Equal(t, 1, strings.Count(rec.Body.String(), "event: image_generation.completed\n"))
+			} else {
+				require.False(t, errors.As(err, &failover))
+			}
+		})
+	}
+}
+
+func TestCodexDirectImagesStreamMultipleOutputs(t *testing.T) {
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw","stream":true,"n":2}`)
 	c, rec := newOpenAIImagesTestContext(t, body)
 	resp := openAIImagesJSONResponse()
-	resp.Body = io.NopCloser(strings.NewReader(`{"data":[]}`))
+	resp.Header.Set("Content-Length", "999")
+	resp.Body = io.NopCloser(strings.NewReader(`{"created":1710000000,"data":[{"b64_json":"aGVsbG8="},{"b64_json":"d29ybGQ="}],"usage":{"output_tokens":20}}`))
 	svc := newOpenAIImagesTestService(&httpUpstreamRecorder{resp: resp})
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
 	require.NoError(t, err)
-	_, err = svc.ForwardImages(context.Background(), c, directImagesTestAccount(), body, parsed, "")
-	require.Error(t, err)
-	require.NotContains(t, rec.Body.String(), "event: image_generation.completed")
+	result, err := svc.ForwardImages(context.Background(), c, directImagesTestAccount(), body, parsed, "")
+	require.NoError(t, err)
+	require.Equal(t, 2, result.ImageCount)
+	require.Equal(t, 20, result.Usage.ImageOutputTokens)
+	require.Empty(t, rec.Header().Get("Content-Length"))
+	frames := strings.Split(strings.TrimSuffix(rec.Body.String(), "\n\n"), "\n\n")
+	require.Len(t, frames, 2)
+	for i, frame := range frames {
+		lines := strings.Split(frame, "\n")
+		require.Len(t, lines, 2)
+		require.Equal(t, "event: image_generation.completed", lines[0])
+		require.True(t, strings.HasPrefix(lines[1], "data: "))
+		payload := strings.TrimPrefix(lines[1], "data: ")
+		require.True(t, gjson.Valid(payload))
+		require.Equal(t, "image_generation.completed", gjson.Get(payload, "type").String())
+		require.Equal(t, []string{"aGVsbG8=", "d29ybGQ="}[i], gjson.Get(payload, "b64_json").String())
+	}
 }
 
 func TestCodexDirectImagesMultipleOutputs(t *testing.T) {

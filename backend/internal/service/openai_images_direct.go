@@ -182,7 +182,8 @@ func (s *OpenAIGatewayService) handleCodexDirectImagesJSONAsStream(
 	startTime time.Time,
 	parsed *OpenAIImagesRequest,
 ) (OpenAIUsage, int, []string, *int, error) {
-	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	// Keep size-limit failures uncommitted too; the caller owns the error response.
+	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, nil)
 	if err != nil {
 		if shouldClassifyOpenAIUpstreamStreamReadError(err) {
 			err = newOpenAIUpstreamStreamReadError(err)
