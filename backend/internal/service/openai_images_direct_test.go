@@ -123,7 +123,11 @@ func TestCodexDirectImagesStreamConvertsPlainJSON(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c, rec := newOpenAIImagesTestContext(t, []byte(test.body))
 			c.Request.URL.Path = test.path
-			upstream := &httpUpstreamRecorder{resp: openAIImagesJSONResponse()}
+			// The live endpoint pretty-prints its JSON; every SSE data payload
+			// must still fit on a single line.
+			resp := openAIImagesJSONResponse()
+			resp.Body = io.NopCloser(strings.NewReader("{\n  \"created\": 1710000000,\n  \"data\": [\n    {\n      \"b64_json\": \"aGVsbG8=\"\n    }\n  ],\n  \"usage\": {\n    \"input_tokens\": 10,\n    \"output_tokens\": 20,\n    \"total_tokens\": 30\n  }\n}\n"))
+			upstream := &httpUpstreamRecorder{resp: resp}
 			svc := newOpenAIImagesTestService(upstream)
 			parsed, err := svc.ParseOpenAIImagesRequest(c, []byte(test.body))
 			require.NoError(t, err)
@@ -139,6 +143,9 @@ func TestCodexDirectImagesStreamConvertsPlainJSON(t *testing.T) {
 			require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
 			out := rec.Body.String()
 			require.Contains(t, out, "event: "+test.wantEvent+"\n")
+			for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+				require.True(t, line == "" || strings.HasPrefix(line, "event: ") || strings.HasPrefix(line, "data: "), "SSE line split mid-payload: %q", line)
+			}
 			dataLine := out[strings.Index(out, "data: ")+len("data: "):]
 			dataLine = dataLine[:strings.Index(dataLine, "\n")]
 			require.Equal(t, test.wantEvent, gjson.Get(dataLine, "type").String())
