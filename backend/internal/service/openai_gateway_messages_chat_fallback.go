@@ -105,6 +105,10 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 			chatBody = policyBody
 		}
 	}
+	// After the group effort policy, which may itself write medium.
+	if normalizedBody, normalized := NormalizeDeepSeekV4OpenAIReasoningEffort(chatBody, upstreamModel); normalized {
+		chatBody = normalizedBody
+	}
 	if err := validateGPT61CompatRequest(chatBody, upstreamModel); err != nil {
 		writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
