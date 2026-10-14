@@ -1670,6 +1670,32 @@ func NormalizeGLMOpenAIReasoningEffort(body []byte, mappedModel string) ([]byte,
 	return modified, true
 }
 
+// NormalizeDeepSeekV4OpenAIReasoningEffort rewrites Chat Completions
+// reasoning_effort values that DeepSeek V4 rejects. Self-hosted V4.1 servers
+// only accept none/low/high/xhigh/max (400 on medium/minimal), while the
+// official API already treats medium as high.
+func NormalizeDeepSeekV4OpenAIReasoningEffort(body []byte, mappedModel string) ([]byte, bool) {
+	normalized := strings.ReplaceAll(strings.ToLower(lastOpenAIModelSegment(mappedModel)), "_", "-")
+	if !strings.HasPrefix(normalized, "deepseek-v4") && !strings.HasPrefix(normalized, "deepseek-flash") {
+		return body, false
+	}
+	raw := gjson.GetBytes(body, "reasoning_effort").String()
+	var mapped string
+	switch normalizeEffortToken(raw) {
+	case "medium":
+		mapped = "high"
+	case "minimal":
+		mapped = "low"
+	default:
+		return body, false
+	}
+	modified, err := sjson.SetBytes(body, "reasoning_effort", mapped)
+	if err != nil {
+		return body, false
+	}
+	return modified, true
+}
+
 func normalizeEffortToken(raw string) string {
 	value := strings.ToLower(strings.TrimSpace(raw))
 	return strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
