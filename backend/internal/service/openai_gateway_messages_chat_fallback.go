@@ -98,6 +98,10 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 			chatBody = policyBody
 		}
 	}
+	// After the group effort policy, which may itself write medium.
+	if normalizedBody, normalized := NormalizeDeepSeekV4OpenAIReasoningEffort(chatBody, upstreamModel); normalized {
+		chatBody = normalizedBody
+	}
 	// Provider normalization and policy caps can both change the converted effort.
 	// Use the final outbound value for usage logs and billing.
 	reasoningEffort := extractOpenAIReasoningEffortFromBody(chatBody, upstreamModel, billingModel, originalModel)

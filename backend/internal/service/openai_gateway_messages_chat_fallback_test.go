@@ -92,6 +92,19 @@ func TestForwardAsAnthropic_ForceChatCompletionsPreservesFinalModelReasoningEffo
 			wantEffort: "medium",
 		},
 		{
+			name:       "DeepSeek V4 omitted default medium becomes high",
+			model:      "claude-sonnet-4-6",
+			mapped:     "DeepSeek-V4.1-Flash",
+			wantEffort: "high",
+		},
+		{
+			name:       "DeepSeek V4 explicit medium becomes high",
+			model:      "claude-sonnet-4-6",
+			mapped:     "DeepSeek-V4.1-Flash",
+			effortJSON: `,"output_config":{"effort":"medium"}`,
+			wantEffort: "high",
+		},
+		{
 			name:       "disabled thinking overrides max",
 			model:      "gpt-5.6-luna",
 			mapped:     "gpt-5.6-luna",
